@@ -5,6 +5,8 @@
 
 import pygame
 import math
+import time
+from src.controller import Command
 
 
 class SimController:
@@ -46,6 +48,14 @@ class SimController:
         # 当前指令
         self.current_command = None
         self.command_timestamp = 0
+        # 手动优先相关
+        self.manual_timeout = 2  # 手动操作后 2 秒内忽略自动指令
+        self.last_manual_time = 0
+        # 手动按键状态
+        self.key_left_pressed = False
+        self.key_right_pressed = False
+        self.key_up_pressed = False
+        self.key_down_pressed = False
     
     def init(self):
         """初始化 Pygame"""
@@ -58,13 +68,18 @@ class SimController:
         
         print("仿真环境已初始化")
     
-    def execute(self, command):
+    def execute(self, command, source='auto'):
         """
         执行控制指令
         
         Args:
             command: Command 枚举
+            source: 'auto' 或 'manual'，表示指令来源
         """
+        # 如果是自动指令，且距离上次手动操作未超时，则忽略
+        if source == 'auto' and (time.time() - self.last_manual_time) < self.manual_timeout:
+            return  # 手动优先，忽略自动指令
+        
         self.current_command = command
         
         if command is None:
@@ -86,20 +101,51 @@ class SimController:
             self.speed = 0
     
     def update(self):
-        """更新小车位置"""
-        # 将角度转换为弧度
-        rad = math.radians(self.angle)
+        # """更新小车位置"""
+        # # 将角度转换为弧度
+        # rad = math.radians(self.angle)
         
-        # 更新位置
+        # # 更新位置
+        # self.x += math.cos(rad) * self.speed
+        # self.y -= math.sin(rad) * self.speed
+        
+        # # 边界检查
+        # if self.x < 0:
+        #     self.x = self.window_width
+        # elif self.x > self.window_width:
+        #     self.x = 0
+        
+        # if self.y < 0:
+        #     self.y = self.window_height
+        # elif self.y > self.window_height:
+        #     self.y = 0
+        """更新小车位置（支持手动长按连续控制）"""
+        # 手动控制逻辑（如果按下方向键，则覆盖自动指令）
+        if self.key_left_pressed:
+            self._mark_manual_control()
+            self.angle -= self.turn_speed
+            self.speed = self.max_speed * 0.5
+        elif self.key_right_pressed:
+            self._mark_manual_control()
+            self.angle += self.turn_speed
+            self.speed = self.max_speed * 0.5
+        elif self.key_up_pressed:
+            self._mark_manual_control()
+            self.speed = self.max_speed
+        elif self.key_down_pressed:
+            self._mark_manual_control()
+            self.speed = 0
+        # 注意：如果没有手动按键，则保持当前 speed（由自动指令或之前的状态决定）
+    
+        # 边界检查与位置更新（原有逻辑）
+        rad = math.radians(self.angle)
         self.x += math.cos(rad) * self.speed
         self.y -= math.sin(rad) * self.speed
-        
-        # 边界检查
+    
         if self.x < 0:
             self.x = self.window_width
         elif self.x > self.window_width:
             self.x = 0
-        
         if self.y < 0:
             self.y = self.window_height
         elif self.y > self.window_height:
@@ -197,7 +243,38 @@ class SimController:
             y_offset += 30
     
     def handle_events(self):
-        """处理 Pygame 事件"""
+        # """处理 Pygame 事件"""
+        # for event in pygame.event.get():
+        #     if event.type == pygame.QUIT:
+        #         self.running = False
+        #         return False
+        #     elif event.type == pygame.KEYDOWN:
+        #         print(f"[调试] 按键按下: {event.key}")  # 临时添加
+        #         if event.key == pygame.K_ESCAPE:
+        #             self.running = False
+        #             return False
+        #         # ---------- 手动控制按键 ----------
+        #         elif event.key == pygame.K_UP:
+        #             self._mark_manual_control()
+        #             self.execute(Command.GO_STRAIGHT, source='manual')
+        #             print("[手动] 直行")
+        #         elif event.key == pygame.K_DOWN:
+        #             self._mark_manual_control()
+        #             self.execute(Command.STOP, source='manual')
+        #             print("[手动] 停止")
+        #         elif event.key == pygame.K_LEFT:
+        #             self._mark_manual_control()
+        #             self.execute(Command.TURN_LEFT, source='manual')
+        #             print("[手动] 左转")
+        #         elif event.key == pygame.K_RIGHT:
+        #             self._mark_manual_control()
+        #             self.execute(Command.TURN_RIGHT, source='manual')
+        #             print("[手动] 右转")
+        #         elif event.key == pygame.K_SPACE:
+        #             self._mark_manual_control()
+        #             self.execute(Command.STOP, source='manual')
+        #             print("[手动] 紧急停止")
+        """处理 Pygame 事件（支持长按连续转向）"""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
@@ -206,7 +283,25 @@ class SimController:
                 if event.key == pygame.K_ESCAPE:
                     self.running = False
                     return False
-        
+                # 记录按键按下
+                elif event.key == pygame.K_UP:
+                    self.key_up_pressed = True
+                elif event.key == pygame.K_DOWN:
+                    self.key_down_pressed = True
+                elif event.key == pygame.K_LEFT:
+                    self.key_left_pressed = True
+                elif event.key == pygame.K_RIGHT:
+                    self.key_right_pressed = True
+            elif event.type == pygame.KEYUP:
+                # 记录按键释放
+                if event.key == pygame.K_UP:
+                    self.key_up_pressed = False
+                elif event.key == pygame.K_DOWN:
+                    self.key_down_pressed = False
+                elif event.key == pygame.K_LEFT:
+                    self.key_left_pressed = False
+                elif event.key == pygame.K_RIGHT:
+                    self.key_right_pressed = False
         return True
     
     def tick(self, fps=30):
@@ -273,6 +368,9 @@ class SimController:
         self.close()
         print(f"演示完成，共运行 {frame_count} 帧")
 
+    def _mark_manual_control(self):
+        """标记手动控制时间"""
+        self.last_manual_time = time.time()
 
 def test_sim_controller():
     """测试仿真控制器"""

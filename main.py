@@ -7,12 +7,16 @@
 2. 串口模式：控制真实 Arduino 小车
 3. 演示模式：仅显示识别结果
 """
+# 314行镜像翻转（水平翻转）
 
 import cv2
 import time
 import argparse
 import sys
 import os
+# 改用 PIL 来渲染中文字符
+from PIL import ImageFont, ImageDraw, Image
+import numpy as np
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -22,6 +26,78 @@ from src.classifier import Classifier
 from src.controller import CommandMapper, Command
 from src.sim_controller import SimController
 from src.serial_controller import SerialController
+
+
+   
+
+# # 绘制中文字符
+# def draw_chinese_text(img, text, position, font_path="C:/Windows/Fonts/simhei.ttf", 
+#                   font_size=30, color=(0, 255, 0)):
+#     # """
+#     # 在 OpenCV 图像上绘制中文文本
+#     # :param img: OpenCV 图像 (numpy array, BGR)
+#     # :param text: 要绘制的文本（支持中文）
+#     # :param position: 文本左上角坐标 (x, y)
+#     # :param font_path: 中文字体文件路径
+#     # :param font_size: 字体大小
+#     # :param color: 颜色 (B, G, R)
+#     # :return: 绘制后的图像
+#     # """
+#     # # 将 OpenCV 图像转换为 PIL 格式 (BGR -> RGB)
+#     # img_pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+#     # draw = ImageDraw.Draw(img_pil)
+    
+#     # try:
+#     #     font = ImageFont.truetype(font_path, font_size)
+#     # except:
+#     #     # 如果找不到字体，使用默认字体（可能不支持中文，但至少不会崩溃）
+#     #     font = ImageFont.load_default()
+    
+#     # # 注意：PIL 的 color 参数是 RGB 顺序，而 OpenCV 是 BGR，所以需要反转
+#     # pil_color = (color[2], color[1], color[0])
+#     # draw.text(position, text, font=font, fill=pil_color)
+
+#     # # 转回 OpenCV 格式
+#     # return cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+#     """
+#     在图像上绘制识别结果（使用英文显示，避免字体问题）
+#     """
+#     # 获取中文类别并转换为英文简写
+#     class_name_cn = prediction.get('class_name_cn', '未知')
+#     en_label = {
+#         '左转': 'Left',
+#         '右转': 'Right',
+#         '直行': 'Straight',
+#         '停止': 'Stop',
+#         '无标志': 'NoSign',
+#         '未知': 'Unknown'
+#     }.get(class_name_cn, class_name_cn)
+#     confidence = prediction.get('confidence', 0)
+#     # 根据置信度设置颜色
+#     if confidence > 0.7:
+#         color = (0, 255, 0)      # 绿色
+#     elif confidence > 0.5:
+#         color = (0, 255, 255)    # 黄色
+#     else:
+#         color = (0, 0, 255)      # 红色
+#     height, width = frame.shape[:2]
+#     # 绘制红框（保持原样）
+#     cv2.rectangle(frame, (10, 10), (width - 10, 80), color, 2)
+#     # 绘制英文类别（大号）
+#     cv2.putText(frame, en_label, (20, 45),
+#                 cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 2)
+#     # 绘制置信度
+#     cv2.putText(frame, f'{confidence:.2f}', (20, 75),
+#                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+#     # 绘制控制指令（将中文"指令："替换为"Cmd:"）
+#     cmd_text = f'Cmd: {command.to_string()}'
+#     cv2.putText(frame, cmd_text, (20, height - 20),
+#                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
+#     # 绘制 FPS
+#     fps = self.camera.get_fps()
+#     cv2.putText(frame, f'FPS: {fps:.1f}', (width - 120, 30),
+#                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
 
 
 class TurnSignSystem:
@@ -168,36 +244,65 @@ class TurnSignSystem:
             command: 控制指令
         """
         # 识别结果
+        """
+        在图像上绘制识别结果（纯英文，100% 可靠）
+        """
+        # 获取中文类别并转为英文
         class_name_cn = prediction.get('class_name_cn', '未知')
+        en_map = {
+            '左转': 'Left',
+            '右转': 'Right',
+            '直行': 'Straight',
+            '停止': 'Stop',
+            '无标志': 'No Sign',
+            '未知': 'Unknown'
+        }
+        en_label = en_map.get(class_name_cn, class_name_cn)
+        
         confidence = prediction.get('confidence', 0)
         
         # 根据置信度设置颜色
         if confidence > 0.7:
-            color = (0, 255, 0)  # 绿色 - 高置信度
+            color = (0, 255, 0)      # 绿色
         elif confidence > 0.5:
-            color = (0, 255, 255)  # 黄色 - 中等置信度
+            color = (0, 255, 255)    # 黄色
         else:
-            color = (0, 0, 255)  # 红色 - 低置信度
+            color = (0, 0, 255)      # 红色
         
-        # 绘制识别结果框
         height, width = frame.shape[:2]
+        
+        # 绘制红框
         cv2.rectangle(frame, (10, 10), (width - 10, 80), color, 2)
         
-        # 绘制文字
-        cv2.putText(frame, f'{class_name_cn}', (20, 40),
-                   cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-        cv2.putText(frame, f'{confidence:.2f}', (20, 70),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+        # 绘制英文类别
+        cv2.putText(frame, en_label, (20, 45),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 2)
+        
+        # 绘制置信度
+        cv2.putText(frame, f'{confidence:.2f}', (20, 75),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
         
         # 绘制控制指令
-        cmd_text = f'指令：{command.to_string()}'
+        # cmd_text = f'Cmd: {command.to_string()}'
+        # cv2.putText(frame, cmd_text, (20, height - 20),
+        #             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
+        cmd_cn = command.to_string()
+        cmd_en_map = {
+            '左转': 'Turn Left',
+            '右转': 'Turn Right',
+            '直行': 'Go Straight',
+            '停止': 'Stop',
+            '未知': 'Unknown'
+        }
+        cmd_en = cmd_en_map.get(cmd_cn, cmd_cn)
+        cmd_text = f'Cmd: {cmd_en}'
         cv2.putText(frame, cmd_text, (20, height - 20),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
         
         # 绘制 FPS
         fps = self.camera.get_fps()
         cv2.putText(frame, f'FPS: {fps:.1f}', (width - 120, 30),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
     
     def run(self):
         """运行系统主循环"""
@@ -211,6 +316,10 @@ class TurnSignSystem:
         print("=" * 60)
         
         while self.running:
+            # 先处理 Pygame 事件，确保响应及时
+            if self.mode == 'simulation' and self.sim_controller:
+                if not self.sim_controller.handle_events():
+                    break
             # 读取帧
             frame = self.camera.read()
             
@@ -219,6 +328,9 @@ class TurnSignSystem:
                 time.sleep(0.1)
                 continue
             
+            # 镜像翻转（水平翻转）参数 1 表示水平翻转，0 表示垂直翻转，-1 表示同时水平和垂直翻转。
+            frame = cv2.flip(frame, 1)
+
             # 处理帧
             prediction, command = self.process_frame(frame)
             

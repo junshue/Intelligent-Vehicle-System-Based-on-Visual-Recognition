@@ -16,7 +16,10 @@ TARGET_CLASSES = {
     33: "right",
     35: "straight",
     14: "stop",
-    # 添加"background"类别稍后单独处理，因为GTSRB中没有背景类
+    # # 添加"background"类别稍后单独处理，因为GTSRB中没有背景类
+    # 0: "background",
+    # 1: "unknown"
+
 }
 
 # 数据集划分比例
