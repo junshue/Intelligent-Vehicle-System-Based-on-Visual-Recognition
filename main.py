@@ -172,7 +172,7 @@ class TurnSignSystem:
         
         # 初始化指令映射器
         print("初始化指令映射器...")
-        self.command_mapper = CommandMapper(window_size=5, confidence_threshold=0.5, min_consensus=3)
+        self.command_mapper = CommandMapper(window_size=8, confidence_threshold=0.75, min_consensus=6)
         
         # 根据模式初始化控制器
         if self.mode == 'simulation':

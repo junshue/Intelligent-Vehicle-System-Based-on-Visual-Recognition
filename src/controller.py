@@ -6,6 +6,8 @@
 from enum import Enum
 from collections import deque
 import numpy as np
+import collections
+from enum import Enum
 
 
 class Command(Enum):
@@ -71,10 +73,9 @@ class CommandMapper:
     将识别结果映射为控制指令，并实现滑动窗口平滑滤波
     """
     
-    def __init__(self, window_size=5, confidence_threshold=0.5, min_consensus=3):
+    def __init__(self, window_size=8, confidence_threshold=0.75, min_consensus=6):
         """
         初始化指令映射器
-        
         Args:
             window_size: 滑动窗口大小（帧数）
             confidence_threshold: 置信度阈值，低于此值视为不可靠
@@ -83,16 +84,18 @@ class CommandMapper:
         self.window_size = window_size
         self.confidence_threshold = confidence_threshold
         self.min_consensus = min_consensus
+        self.history = collections.deque(maxlen=window_size)  # 记录最近窗口内的类别
         
-        # 滑动窗口
-        self.prediction_window = deque(maxlen=window_size)
-        
-        # 当前指令
-        self.current_command = Command.UNKNOWN
-        
-        # 统计信息
-        self.total_frames = 0
-        self.command_changes = 0
+        # 类别到指令的映射表
+        self.class_to_command = {
+            'left': Command.TURN_LEFT,
+            'right': Command.TURN_RIGHT,
+            'straight': Command.GO_STRAIGHT,
+            'stop': Command.STOP,
+            'unknown': Command.STOP,
+            'background': Command.STOP
+        }
+
     
     def map(self, prediction):
         """
@@ -107,32 +110,31 @@ class CommandMapper:
         Returns:
             Command: 映射后的控制指令
         """
-        self.total_frames += 1
-        
-        # 检查置信度
-        if prediction['confidence'] < self.confidence_threshold:
-            # 置信度太低，使用未知指令
-            self.prediction_window.append({
-                'command': Command.UNKNOWN,
-                'confidence': prediction['confidence']
-            })
+        """
+        根据识别结果映射控制指令，带滑动窗口投票和平滑
+        """
+        class_name = prediction.get('class_name', 'unknown')
+        confidence = prediction.get('confidence', 0.0)
+
+        # 低置信度视为 unknown
+        if confidence < self.confidence_threshold:
+            class_name = 'unknown'
+
+        self.history.append(class_name)
+
+        # 窗口未满时不输出指令（或输出 STOP）
+        if len(self.history) < self.window_size:
+            return Command.STOP
+
+        # 统计窗口内出现最多的类别
+        counter = collections.Counter(self.history)
+        most_common_class, count = counter.most_common(1)[0]
+
+        # 检查是否达到共识数
+        if count >= self.min_consensus:
+            return self.class_to_command.get(most_common_class, Command.STOP)
         else:
-            # 转换为控制指令
-            command = Command.from_class_name(prediction['class_name'])
-            self.prediction_window.append({
-                'command': command,
-                'confidence': prediction['confidence']
-            })
-        
-        # 滑动窗口投票
-        command = self._vote()
-        
-        # 记录指令变化
-        if command != self.current_command:
-            self.command_changes += 1
-            self.current_command = command
-        
-        return command
+            return Command.STOP
     
     def _vote(self):
         """

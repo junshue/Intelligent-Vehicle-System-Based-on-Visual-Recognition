@@ -62,6 +62,14 @@ class SimController:
         self.friction = 0.02             # 无操作时的自然摩擦力
         self.max_forward_speed = 5.0     # 最大前进速度
         self.max_reverse_speed = -3.0    # 最大倒车速度（负值）
+        # 转弯平滑参数
+        self.turn_rate = 0.0                # 当前转弯速率（度/帧）
+        self.max_turn_rate = 4.0            # 最大转弯速率
+        self.turn_acceleration = 0.3        # 转弯加速度
+        self.turn_friction = 0.1            # 转弯回正摩擦力
+        # 目标状态（用于平滑自动控制）
+        self.target_speed = 0.0
+        self.target_turn_direction = 0   # -1:左, 0:直行, 1:右
     
     def init(self):
         """初始化 Pygame"""
@@ -107,24 +115,6 @@ class SimController:
             self.speed = 0
     
     def update(self):
-        # """更新小车位置"""
-        # # 将角度转换为弧度
-        # rad = math.radians(self.angle)
-        
-        # # 更新位置
-        # self.x += math.cos(rad) * self.speed
-        # self.y -= math.sin(rad) * self.speed
-        
-        # # 边界检查
-        # if self.x < 0:
-        #     self.x = self.window_width
-        # elif self.x > self.window_width:
-        #     self.x = 0
-        
-        # if self.y < 0:
-        #     self.y = self.window_height
-        # elif self.y > self.window_height:
-        #     self.y = 0
         """更新小车位置（支持手动长按连续控制）"""
         # 手动加减速（长按持续生效）
         if self.key_up_pressed:
@@ -134,29 +124,46 @@ class SimController:
             self._mark_manual_control()
             self.speed = max(self.speed - self.brake_deceleration, self.max_reverse_speed)
         else:
-            # 摩擦力
+            # 自然摩擦力
             if self.speed > 0:
                 self.speed = max(self.speed - self.friction, 0)
             elif self.speed < 0:
                 self.speed = min(self.speed + self.friction, 0)
 
-        # 转弯（长按持续生效）
+        # 根据按键决定目标转弯方向
+        turn_direction = 0
         if self.key_left_pressed:
-            self._mark_manual_control()
-            self.angle -= self.turn_speed
+            turn_direction = -1
         if self.key_right_pressed:
+            turn_direction = 1
+    
+        # 只有速度不为零时，才允许转弯（禁止原地转弯）
+        if self.speed != 0 and turn_direction != 0:
             self._mark_manual_control()
-            self.angle += self.turn_speed
-        
-        # 转弯减速逻辑
-        if self.key_left_pressed or self.key_right_pressed:
-            # 转弯时轻微减速
+            # 向目标方向加速转弯速率
+            target_turn_rate = turn_direction * self.max_turn_rate
+            if self.turn_rate < target_turn_rate:
+                self.turn_rate = min(self.turn_rate + self.turn_acceleration, target_turn_rate)
+            elif self.turn_rate > target_turn_rate:
+                self.turn_rate = max(self.turn_rate - self.turn_acceleration, target_turn_rate)
+        else:
+            # 没有转向输入或速度为零时，转弯速率逐渐回零（模拟回正）
+            if self.turn_rate > 0:
+                self.turn_rate = max(self.turn_rate - self.turn_friction, 0)
+            elif self.turn_rate < 0:
+                self.turn_rate = min(self.turn_rate + self.turn_friction, 0)
+    
+        # 应用转弯速率到角度
+        self.angle += self.turn_rate
+    
+        # 转弯时轻微减速（可选，保留）
+        if self.speed != 0 and (self.key_left_pressed or self.key_right_pressed):
             if self.speed > 0:
                 self.speed -= 0.05
             elif self.speed < 0:
                 self.speed += 0.05
 
-        # 边界检查与位置更新（原有逻辑）
+        # 边界检查与位置更新
         rad = math.radians(self.angle)
         self.x += math.cos(rad) * self.speed
         self.y -= math.sin(rad) * self.speed
