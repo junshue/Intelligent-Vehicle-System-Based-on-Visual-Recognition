@@ -49,13 +49,19 @@ class SimController:
         self.current_command = None
         self.command_timestamp = 0
         # 手动优先相关
-        self.manual_timeout = 2  # 手动操作后 2 秒内忽略自动指令
+        self.manual_timeout = 0.5  # 手动操作后 0.5 秒内忽略自动指令
         self.last_manual_time = 0
         # 手动按键状态
         self.key_left_pressed = False
         self.key_right_pressed = False
         self.key_up_pressed = False
         self.key_down_pressed = False
+        # 加速/减速参数
+        self.acceleration = 0.2          # 每帧加速度
+        self.brake_deceleration = 0.3    # 刹车减速度（按下键时）
+        self.friction = 0.02             # 无操作时的自然摩擦力
+        self.max_forward_speed = 5.0     # 最大前进速度
+        self.max_reverse_speed = -3.0    # 最大倒车速度（负值）
     
     def init(self):
         """初始化 Pygame"""
@@ -120,28 +126,41 @@ class SimController:
         # elif self.y > self.window_height:
         #     self.y = 0
         """更新小车位置（支持手动长按连续控制）"""
-        # 手动控制逻辑（如果按下方向键，则覆盖自动指令）
+        # 手动加减速（长按持续生效）
+        if self.key_up_pressed:
+            self._mark_manual_control()
+            self.speed = min(self.speed + self.acceleration, self.max_forward_speed)
+        elif self.key_down_pressed:
+            self._mark_manual_control()
+            self.speed = max(self.speed - self.brake_deceleration, self.max_reverse_speed)
+        else:
+            # 摩擦力
+            if self.speed > 0:
+                self.speed = max(self.speed - self.friction, 0)
+            elif self.speed < 0:
+                self.speed = min(self.speed + self.friction, 0)
+
+        # 转弯（长按持续生效）
         if self.key_left_pressed:
             self._mark_manual_control()
             self.angle -= self.turn_speed
-            self.speed = self.max_speed * 0.5
-        elif self.key_right_pressed:
+        if self.key_right_pressed:
             self._mark_manual_control()
             self.angle += self.turn_speed
-            self.speed = self.max_speed * 0.5
-        elif self.key_up_pressed:
-            self._mark_manual_control()
-            self.speed = self.max_speed
-        elif self.key_down_pressed:
-            self._mark_manual_control()
-            self.speed = 0
-        # 注意：如果没有手动按键，则保持当前 speed（由自动指令或之前的状态决定）
-    
+        
+        # 转弯减速逻辑
+        if self.key_left_pressed or self.key_right_pressed:
+            # 转弯时轻微减速
+            if self.speed > 0:
+                self.speed -= 0.05
+            elif self.speed < 0:
+                self.speed += 0.05
+
         # 边界检查与位置更新（原有逻辑）
         rad = math.radians(self.angle)
         self.x += math.cos(rad) * self.speed
         self.y -= math.sin(rad) * self.speed
-    
+
         if self.x < 0:
             self.x = self.window_width
         elif self.x > self.window_width:
@@ -220,20 +239,41 @@ class SimController:
         """绘制信息面板"""
         # 小车状态
         status_text = [
-            f'位置：({self.x:.0f}, {self.y:.0f})',
-            f'方向：{self.angle:.1f}°',
-            f'速度：{self.speed:.1f}',
+            f'Pos: ({self.x:.0f}, {self.y:.0f})',
+            f'Angle: {self.angle:.1f} deg',
+            f'Speed: {self.speed:.1f}',
         ]
         
         # 当前指令
         if self.current_command:
-            status_text.append(f'指令：{self.current_command.to_string()}')
-        
+            cmd_str = self.current_command.to_string()
+            # 中文指令映射英文
+            cmd_en_map = {
+                '左转': 'Turn Left',
+                '右转': 'Turn Right',
+                '直行': 'Go Straight',
+                '停止': 'Stop',
+                '未知': 'Unknown'
+            }
+            cmd_en = cmd_en_map.get(cmd_str, cmd_str)
+            status_text.append(f'Command: {cmd_en}')
+
         # 识别结果
         if recognition_result:
-            status_text.append(f'识别：{recognition_result.get("class_name_cn", "未知")}')
+            class_cn = recognition_result.get("class_name_cn", "Unknown")
+            # 中文类别映射英文
+            en_map = {
+                '左转': 'Left',
+                '右转': 'Right',
+                '直行': 'Straight',
+                '停止': 'Stop',
+                '无标志': 'No Sign',
+                '未知': 'Unknown'
+            }
+            class_en = en_map.get(class_cn, class_cn)
             confidence = recognition_result.get('confidence', 0)
-            status_text.append(f'置信度：{confidence:.2f}')
+            status_text.append(f'Recog: {class_en}')
+            status_text.append(f'Conf: {confidence:.2f}')
         
         # 绘制文本
         y_offset = 10
