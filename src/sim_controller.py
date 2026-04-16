@@ -133,9 +133,9 @@ class SimController:
         # 根据按键决定目标转弯方向
         turn_direction = 0
         if self.key_left_pressed:
-            turn_direction = -1
-        if self.key_right_pressed:
             turn_direction = 1
+        if self.key_right_pressed:
+            turn_direction = -1
     
         # 只有速度不为零时，才允许转弯（禁止原地转弯）
         if self.speed != 0 and turn_direction != 0:
@@ -154,7 +154,13 @@ class SimController:
                 self.turn_rate = min(self.turn_rate + self.turn_friction, 0)
     
         # 应用转弯速率到角度
-        self.angle += self.turn_rate
+        # 前进时：直接应用 turn_rate
+        # 倒车时：转向效果相反，所以取反
+        if self.speed >= 0:
+            self.angle += self.turn_rate
+        else:
+            self.angle -= self.turn_rate
+        # self.angle += self.turn_rate
     
         # 转弯时轻微减速（可选，保留）
         if self.speed != 0 and (self.key_left_pressed or self.key_right_pressed):
@@ -207,41 +213,137 @@ class SimController:
             pygame.draw.line(self.screen, (200, 200, 200), (0, y), (self.window_width, y))
     
     def _draw_car(self):
-        """绘制小车"""
-        # 小车大小
-        car_width = 40
-        car_height = 20
-        
-        # 计算小车中心点
+        """绘制一辆美观的卡通小车（支持旋转）"""
         center_x = int(self.x)
         center_y = int(self.y)
-        
-        # 计算四个角点（考虑旋转）
         rad = math.radians(self.angle)
         cos_a = math.cos(rad)
         sin_a = math.sin(rad)
-        
-        # 前部中心点（用于显示方向）
-        front_x = center_x + cos_a * car_width
-        front_y = center_y - sin_a * car_width
-        
-        # 绘制小车主体（矩形）
-        points = [
-            (center_x + cos_a * car_width - sin_a * car_height,
-             center_y - sin_a * car_width - cos_a * car_height),
-            (center_x + cos_a * car_width + sin_a * car_height,
-             center_y - sin_a * car_width + cos_a * car_height),
-            (center_x - cos_a * car_width + sin_a * car_height,
-             center_y + sin_a * car_width + cos_a * car_height),
-            (center_x - cos_a * car_width - sin_a * car_height,
-             center_y + sin_a * car_width - cos_a * car_height),
+
+        # ---------- 车身尺寸 ----------
+        body_length = 44      # 车身长度（前后）
+        body_width = 24       # 车身宽度（左右）
+        cabin_length = 20     # 乘员舱长度
+        cabin_width = 18      # 乘员舱宽度
+
+        # ---------- 辅助函数：将局部坐标转换为世界坐标 ----------
+        def local_to_world(lx, ly):
+            """将相对于小车中心、车头方向为 x 正方向的局部坐标转换为屏幕坐标"""
+            world_x = center_x + lx * cos_a - ly * sin_a
+            world_y = center_y - lx * sin_a - ly * cos_a
+            return int(world_x), int(world_y)
+
+        # ---------- 1. 绘制车轮（四个黑色圆角矩形或圆形）----------
+        wheel_radius = 6
+        wheel_width = 10
+        # 车轮位置（局部坐标）
+        wheel_positions = [
+            ( body_length*0.5, -body_width*0.55),  # 右前
+            ( body_length*0.5,  body_width*0.55),  # 左前
+            (-body_length*0.5, -body_width*0.55),  # 右后
+            (-body_length*0.5,  body_width*0.55)   # 左后
         ]
+        for lx, ly in wheel_positions:
+            wx, wy = local_to_world(lx, ly)
+            pygame.draw.circle(self.screen, (30, 30, 30), (wx, wy), wheel_radius)
+            pygame.draw.circle(self.screen, (60, 60, 60), (wx, wy), wheel_radius - 2)
+
+        # ---------- 2. 绘制车身主体（带圆角的矩形，用多边形近似）----------
+        # 车身四角局部坐标（相对于中心）
+        corners = [
+            ( body_length*0.5, -body_width*0.5),
+            ( body_length*0.5,  body_width*0.5),
+            (-body_length*0.5,  body_width*0.5),
+            (-body_length*0.5, -body_width*0.5)
+        ]
+        body_points = [local_to_world(x, y) for x, y in corners]
+        pygame.draw.polygon(self.screen, (220, 50, 50), body_points)      # 红色车身
+        pygame.draw.polygon(self.screen, (180, 20, 20), body_points, 2)   # 深红色边框
+
+        # ---------- 3. 绘制车窗（深蓝色，略小于车身）----------
+        cabin_corners = [
+            ( cabin_length*0.5, -cabin_width*0.5),
+            ( cabin_length*0.5,  cabin_width*0.5),
+            (-cabin_length*0.5,  cabin_width*0.5),
+            (-cabin_length*0.5, -cabin_width*0.5)
+        ]
+        cabin_points = [local_to_world(x, y) for x, y in cabin_corners]
+        pygame.draw.polygon(self.screen, (70, 130, 200), cabin_points)    # 钢蓝色车窗
+        pygame.draw.polygon(self.screen, (30, 80, 150), cabin_points, 2)  # 边框
+
         
-        pygame.draw.polygon(self.screen, self.COLOR_CAR, points)
-        
-        # 绘制方向指示线
-        pygame.draw.line(self.screen, (255, 0, 0), (center_x, center_y), (front_x, front_y), 2)
+        # ---------- 4. 绘制扇形车灯（前大灯）----------
+        light_angle_span = 40                     # 光束展开角度（度）
+        light_length = 50                         # 光束长度
+        light_color = (255, 240, 150, 120)        # 黄色带透明度（RGBA）
+
+        # 创建临时透明表面用于绘制半透明扇形
+        light_surface = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA)
+
+        # 左前灯（车身左侧）
+        left_light_center = local_to_world(body_length*0.5, -body_width*0.3)
+        self._draw_light_beam(light_surface, left_light_center, self.angle - 15, light_angle_span, light_length, light_color)
+        # 右前灯（车身右侧）
+        right_light_center = local_to_world(body_length*0.5, body_width*0.3)
+        self._draw_light_beam(light_surface, right_light_center, self.angle + 15, light_angle_span, light_length, light_color)
+
+        # 将光束表面混合到主屏幕
+        self.screen.blit(light_surface, (0, 0))
+
+        # 车灯外壳（小圆形，覆盖在光束起点，更真实）
+        pygame.draw.circle(self.screen, (255, 220, 100), left_light_center, 5)
+        pygame.draw.circle(self.screen, (255, 220, 100), right_light_center, 5)
+
+        # 尾灯（红色，简单圆形即可）
+        taillight_pos = local_to_world(-body_length*0.5 - 2, -body_width*0.25)
+        pygame.draw.circle(self.screen, (200, 30, 30), taillight_pos, 4)
+        taillight_pos2 = local_to_world(-body_length*0.5 - 2, body_width*0.25)
+        pygame.draw.circle(self.screen, (200, 30, 30), taillight_pos2, 4)
+
+        # ---------- 5. 方向指示器（红色箭头，始终指向前方）----------
+        arrow_length = 25
+        arrow_head_x = center_x + cos_a * (body_length*0.5 + arrow_length)
+        arrow_head_y = center_y - sin_a * (body_length*0.5 + arrow_length)
+        arrow_left_x = center_x + cos_a * (body_length*0.5 + 5) + sin_a * 6
+        arrow_left_y = center_y - sin_a * (body_length*0.5 + 5) + cos_a * 6
+        arrow_right_x = center_x + cos_a * (body_length*0.5 + 5) - sin_a * 6
+        arrow_right_y = center_y - sin_a * (body_length*0.5 + 5) - cos_a * 6
+
+        pygame.draw.polygon(self.screen, (255, 50, 50), [
+            (arrow_head_x, arrow_head_y),
+            (arrow_left_x, arrow_left_y),
+            (arrow_right_x, arrow_right_y)
+        ])
     
+    def _draw_light_beam(self, surface, center, base_angle, span_angle, length, color):
+        """
+        在指定表面上绘制一个扇形光束
+        :param surface: Pygame Surface（需支持 alpha 通道）
+        :param center: 光束起点 (x, y)
+        :param base_angle: 光束中心方向（度）
+        :param span_angle: 光束展开角度（度）
+        :param length: 光束长度
+        :param color: RGBA 颜色元组
+        """
+        points = [center]
+        rad_base = math.radians(base_angle)
+        half_span = span_angle / 2
+    
+        # 左边缘点
+        left_angle = rad_base - math.radians(half_span)
+        left_x = center[0] + length * math.cos(left_angle)
+        left_y = center[1] - length * math.sin(left_angle)
+        points.append((left_x, left_y))
+    
+        # 右边缘点
+        right_angle = rad_base + math.radians(half_span)
+        right_x = center[0] + length * math.cos(right_angle)
+        right_y = center[1] - length * math.sin(right_angle)
+        points.append((right_x, right_y))
+    
+        # 绘制填充扇形
+        pygame.draw.polygon(surface, color, points)
+        
     def _draw_info_panel(self, recognition_result=None):
         """绘制信息面板"""
         # 小车状态

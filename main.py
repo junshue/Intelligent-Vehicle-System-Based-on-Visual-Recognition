@@ -7,7 +7,7 @@
 2. 串口模式：控制真实 Arduino 小车
 3. 演示模式：仅显示识别结果
 """
-# 314行镜像翻转（水平翻转）
+# 332行镜像翻转（水平翻转）
 
 import cv2
 import time
@@ -329,7 +329,7 @@ class TurnSignSystem:
                 continue
             
             # 镜像翻转（水平翻转）参数 1 表示水平翻转，0 表示垂直翻转，-1 表示同时水平和垂直翻转。
-            frame = cv2.flip(frame, 1)
+            # frame = cv2.flip(frame, 1)
 
             # 处理帧
             prediction, command = self.process_frame(frame)
